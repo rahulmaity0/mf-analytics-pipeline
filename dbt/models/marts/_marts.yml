@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: dim_scheme
+    description: One row per scheme with plan, option and active flag derived from the name.
+    columns:
+      - name: scheme_code
+        data_tests: [unique, not_null]
+      - name: plan
+        data_tests:
+          - accepted_values: { values: [Direct, Regular] }
+      - name: option_type
+        data_tests:
+          - accepted_values: { values: [Growth, IDCW, Bonus, Other] }
+
+  - name: fct_fund_metrics_monthly
+    description: Month-end performance metrics per scheme.
+    data_tests:
+      - unique_combination_of_columns:
+          columns: [scheme_code, month]
+    columns:
+      - name: scheme_code
+        data_tests:
+          - not_null
+          - relationships: { to: ref('dim_scheme'), field: scheme_code }
+      - name: vol_1y
+        data_tests:
+          - non_negative
+
+  - name: mart_fund_scorecard
+    description: Latest metrics for active Growth schemes, ranked within category and compared with the benchmark.
+    columns:
+      - name: scheme_code
+        data_tests: [unique, not_null]
+      - name: rank_ret_1y
+        data_tests: [not_null]
+      - name: max_drawdown_1y
+        data_tests:
+          - non_positive
+
+  - name: mart_category_summary
+    description: Category-level distribution of returns and risk.
+    data_tests:
+      - unique_combination_of_columns:
+          columns: [category, plan]
+
+  - name: mart_fund_house_summary
+    description: Fund houses by breadth and share of funds beating their category median.
+    columns:
+      - name: fund_house
+        data_tests: [unique]
+
+  - name: mart_nav_anomalies
+    description: Day-over-day NAV moves above 50%, with scheme context, for review.

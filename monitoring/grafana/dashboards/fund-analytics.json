@@ -1,0 +1,134 @@
+{
+  "uid": "mf-funds",
+  "title": "MF Fund Analytics",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": {
+    "from": "now-5y",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "tags": [
+    "mutual-funds"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Top Direct equity funds by 1y return",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "warehouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "warehouse"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "\nselect scheme_name, replace(category, 'Equity Scheme - ', '') as category,\n       round((ret_1y * 100)::numeric, 2) as \"1y return %\",\n       round((ret_1y_vs_benchmark * 100)::numeric, 2) as \"1y vs Nifty 50 (pp)\",\n       round((cagr_3y * 100)::numeric, 2) as \"3y CAGR %\",\n       round((vol_1y * 100)::numeric, 2) as \"1y vol %\", round(sharpe_1y::numeric, 2) as \"1y Sharpe\",\n       round((max_drawdown_1y * 100)::numeric, 1) as \"1y max drawdown %\",\n       rank_ret_1y as \"rank in category\"\nfrom marts.mart_fund_scorecard\nwhere plan = 'Direct' and asset_class = 'Equity Scheme' and ret_1y is not null\norder by ret_1y desc\nlimit 15"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "barchart",
+      "title": "Median 1y return by equity category (Direct)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "warehouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "warehouse"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "\nselect replace(category, 'Equity Scheme - ', '') as category, round((median_ret_1y * 100)::numeric, 2) as \"median 1y %\"\nfrom marts.mart_category_summary\nwhere plan = 'Direct' and asset_class = 'Equity Scheme' and funds >= 3\norder by median_ret_1y desc"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xField": "category",
+        "showValue": "always"
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Nifty 50 index fund NAV (benchmark)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "warehouse"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "warehouse"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "time_series",
+          "rawSql": "\nselect as_of_date::timestamp as time, nav as \"UTI Nifty 50 Index (Direct)\"\nfrom marts.fct_fund_metrics_monthly\nwhere scheme_code = 120716\norder by 1"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Suspicious NAV moves (>50% in a day)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "warehouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "warehouse"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "\nselect nav_date::text as nav_date, scheme_name, fund_house, prev_nav, nav, round((change * 100)::numeric, 1) as \"change %\"\nfrom marts.mart_nav_anomalies\norder by nav_date desc\nlimit 50"
+        }
+      ]
+    }
+  ]
+}

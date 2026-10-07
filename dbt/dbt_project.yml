@@ -1,0 +1,26 @@
+name: mf_analytics
+version: "1.0.0"
+config-version: 2
+profile: mf_analytics
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: target
+clean-targets: [target, dbt_packages]
+
+vars:
+  # UTI Nifty 50 Index Fund - Direct Plan - Growth: a low-cost index fund
+  # used as the market benchmark, since index levels themselves aren't in AMFI data.
+  benchmark_scheme_code: 120716
+  # A scheme whose latest NAV is older than this many days is treated as closed.
+  active_within_days: 7
+
+models:
+  mf_analytics:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts

@@ -15,3 +15,4 @@ derby.log
 *.egg-info/
 .idea/
 .vscode/
+dbt/.user.yml
