@@ -1,0 +1,11 @@
+pyspark
+pyarrow
+pandas
+numpy
+boto3
+requests
+pymongo
+psycopg2-binary
+redis
+prometheus-client
+pytest

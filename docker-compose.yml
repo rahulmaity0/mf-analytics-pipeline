@@ -1,0 +1,133 @@
+name: mf-analytics
+
+x-pipeline-env: &pipeline-env
+  S3_ENDPOINT: http://s3:8333
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lakeadmin}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-lakeadmin-secret}
+  LAKE_BUCKET: ${LAKE_BUCKET:-mf-lake}
+  WAREHOUSE_HOST: postgres
+  WAREHOUSE_PORT: "5432"
+  WAREHOUSE_DB: warehouse
+  WAREHOUSE_USER: ${POSTGRES_USER:-mf}
+  WAREHOUSE_PASSWORD: ${POSTGRES_PASSWORD:-mf}
+  MONGO_URI: mongodb://mongo:27017
+  REDIS_URL: redis://redis:6379/0
+  PUSHGATEWAY_URL: pushgateway:9091
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mf}
+      POSTGRES_DB: warehouse
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mf} -d warehouse"]
+      interval: 5s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    volumes: [mongodata:/data/db]
+    ports: ["27017:27017"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  s3:
+    # S3-compatible object store for local development (on AWS this is plain S3).
+    image: chrislusf/seaweedfs:4.48
+    entrypoint: ["/bin/sh", "/s3-entrypoint.sh"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lakeadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lakeadmin-secret}
+    volumes:
+      - s3data:/data
+      - ./docker/s3/entrypoint.sh:/s3-entrypoint.sh:ro
+    ports: ["8333:8333"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      retries: 20
+
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+    image: mf-analytics/airflow:latest
+    depends_on:
+      postgres: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      s3: { condition: service_healthy }
+    environment:
+      <<: *pipeline-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-mf}:${POSTGRES_PASSWORD:-mf}@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Kolkata
+      AIRFLOW__CORE__PARALLELISM: "4"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-local-dev-only}
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-3g}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./dbt:/opt/airflow/dbt
+      - ./tests:/opt/airflow/tests
+    ports: ["8080:8080"]
+    command: ["bash", "/opt/airflow/start.sh"]
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    image: mf-analytics/api:latest
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+    environment: *pipeline-env
+    ports: ["8000:8000"]
+
+  pushgateway:
+    image: prom/pushgateway:v1.11.0
+    ports: ["9091:9091"]
+
+  prometheus:
+    image: prom/prometheus:v3.3.0
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    depends_on: [pushgateway, api]
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      WAREHOUSE_USER: ${POSTGRES_USER:-mf}
+      WAREHOUSE_PASSWORD: ${POSTGRES_PASSWORD:-mf}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus, postgres]
+
+volumes:
+  pgdata:
+  mongodata:
+  s3data:
