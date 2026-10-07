@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: Tables loaded by the Spark and registry jobs. dbt never writes here.
+    tables:
+      - name: schemes
+        description: Current view of every scheme, exported from the MongoDB registry.
+        columns:
+          - name: scheme_code
+            data_tests: [unique, not_null]
+          - name: scheme_name
+            data_tests: [not_null]
+      - name: fund_metrics
+        description: Month-end and latest performance metrics per scheme, from the gold layer.
+        columns:
+          - name: scheme_code
+            data_tests: [not_null]
+          - name: as_of_date
+            data_tests: [not_null]
+          - name: nav
+            data_tests: [not_null]
+      - name: dq_nav_jumps
+        description: Day-over-day NAV moves above 50%, flagged for review.
