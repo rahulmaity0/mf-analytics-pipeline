@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+logs/
+spark-warehouse/
+metastore_db/
+derby.log
+*.egg-info/
+.idea/
+.vscode/
