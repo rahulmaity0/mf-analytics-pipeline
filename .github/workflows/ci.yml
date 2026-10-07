@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff==0.11.8
+      - run: ruff check src tests dags
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            ci/requirements-test.txt
+            docker/api/requirements.txt
+      # PySpark needs a JVM for the Spark job tests.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: pip install -r ci/requirements-test.txt -r docker/api/requirements.txt
+      - run: pytest -v
+
+  dbt:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mf
+          POSTGRES_PASSWORD: mf
+          POSTGRES_DB: warehouse
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mf -d warehouse"
+          --health-interval 5s
+          --health-retries 20
+    env:
+      WAREHOUSE_HOST: localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "dbt-core~=1.9.0" "dbt-postgres~=1.9.0"
+      # Empty raw tables with the same columns the Spark jobs create, so every
+      # model compiles and runs, and every test executes, against real Postgres.
+      - run: psql -v ON_ERROR_STOP=1 -f ci/raw_tables.sql
+        env:
+          PGHOST: localhost
+          PGUSER: mf
+          PGPASSWORD: mf
+          PGDATABASE: warehouse
+      - run: dbt build --project-dir dbt --profiles-dir dbt
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+      - run: docker build -f docker/api/Dockerfile -t mf-analytics/api:ci .
